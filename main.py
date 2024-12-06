@@ -11,6 +11,8 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 from colorama import init, Fore, Style
 from dotenv import load_dotenv
+import toml
+import streamlit as st
 
 # Load environment variables from .env file
 load_dotenv()
@@ -30,22 +32,31 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+
 # Constants
-ORDER_TYPE_MARKET = os.getenv("ORDER_TYPE_MARKET")
-SIDE_BUY = os.getenv("SIDE_BUY")
-SIDE_SELL = os.getenv("SIDE_SELL")
-INTERVAL = os.getenv("INTERVAL")  # Changed to 15 minute interval
-LIMIT = int(os.getenv("LIMIT"))
-RSI_PERIOD = int(os.getenv("RSI_PERIOD"))
-SMA_FAST = int(os.getenv("SMA_FAST"))
-SMA_SLOW = int(os.getenv("SMA_SLOW"))
-RSI_OVERBOUGHT = int(os.getenv("RSI_OVERBOUGHT"))
-RSI_OVERSOLD = int(os.getenv("RSI_OVERSOLD"))
-FEE_RATE = float(os.getenv("FEE_RATE"))  # 0.5% fee buffer
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL"))  # 15 minutes in seconds
-STOP_LOSS = float(os.getenv("STOP_LOSS"))  # 2% stop loss
-TAKE_PROFIT = float(os.getenv("TAKE_PROFIT"))  # 5% take profit
-MONTHLY_TARGET = float(os.getenv("MONTHLY_TARGET"))  # 5% monthly target
+ORDER_TYPE_MARKET = st.secrets["trading_configuration"]["ORDER_TYPE_MARKET"]
+SIDE_BUY = st.secrets["trading_configuration"]["SIDE_BUY"]
+SIDE_SELL = st.secrets["trading_configuration"]["SIDE_SELL"]
+INTERVAL = st.secrets["trading_configuration"]["INTERVAL"]
+LIMIT = st.secrets["trading_configuration"]["LIMIT"]
+RSI_PERIOD = st.secrets["trading_configuration"]["RSI_PERIOD"]
+SMA_FAST = st.secrets["trading_configuration"]["SMA_FAST"]
+SMA_SLOW = st.secrets["trading_configuration"]["SMA_SLOW"]
+RSI_OVERBOUGHT = st.secrets["trading_configuration"]["RSI_OVERBOUGHT"]
+RSI_OVERSOLD = st.secrets["trading_configuration"]["RSI_OVERSOLD"]
+FEE_RATE = st.secrets["trading_configuration"]["FEE_RATE"]
+CHECK_INTERVAL = st.secrets["trading_configuration"]["CHECK_INTERVAL"]
+STOP_LOSS = st.secrets["trading_configuration"]["STOP_LOSS"]
+TAKE_PROFIT = st.secrets["trading_configuration"]["TAKE_PROFIT"]
+MONTHLY_TARGET = st.secrets["trading_configuration"]["MONTHLY_TARGET"]
+
+# Exchange Configuration
+EXCHANGE = st.secrets["exchange"]["EXCHANGE"]
+MAX_BUY_USD = st.secrets["max_trade_amounts"]["MAX_BUY_USD"]
+MAX_BUY_MXN = st.secrets["max_trade_amounts"]["MAX_BUY_MXN"]
+MAX_SELL_USD = st.secrets["max_trade_amounts"]["MAX_SELL_USD"]
+MAX_SELL_MXN = st.secrets["max_trade_amounts"]["MAX_SELL_MXN"]
+
 
 # Validate constants
 if ORDER_TYPE_MARKET not in ["MARKET", "LIMIT"]:
@@ -108,13 +119,6 @@ if TAKE_PROFIT < 0 or TAKE_PROFIT > 1:
 if MONTHLY_TARGET < 0 or MONTHLY_TARGET > 1:
     raise ValueError("MONTHLY_TARGET must be between 0 and 1")
 
-# Exchange Configuration
-EXCHANGE = os.getenv("EXCHANGE")  # BINANCE or BITSO
-MAX_BUY_USD = float(os.getenv("MAX_BUY_USD"))  # Max USD to spend per trade
-MAX_BUY_MXN = float(os.getenv("MAX_BUY_MXN"))  # Max MXN to spend per trade
-MAX_SELL_USD = float(os.getenv("MAX_SELL_USD"))  # Max USD to sell per trade
-MAX_SELL_MXN = float(os.getenv("MAX_SELL_MXN"))  # Max MXN to sell per trade
-
 # Validate exchange configuration
 if EXCHANGE not in ["BINANCE", "BITSO"]:
     raise ValueError("EXCHANGE must be 'BINANCE' or 'BITSO'")
@@ -134,9 +138,13 @@ if MAX_SELL_MXN < 0:
 
 class State:
     def __init__(self):
-        self.saldo_money: float = float(os.getenv("INITIAL_BALANCE"))
+        self.saldo_money: float = float(
+            st.secrets["initial_balance"]["INITIAL_BALANCE"]
+        )
         self.monedas: float = 0.0
-        self.is_simulation: bool = os.getenv("IS_SIMULATION", "True") == "True"
+        self.is_simulation: bool = (
+            st.secrets["simulation_mode"]["IS_SIMULATION"] == "true"
+        )
         self.last_price: float = 0.0
         self.trades_history: List[Dict] = []
         self.total_profit: float = 0.0
