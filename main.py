@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 from colorama import init, Fore, Style
 from dotenv import load_dotenv
 import toml
-import streamlit as st
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -32,30 +32,32 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+with open("secrets.toml", "r") as file:
+    secrets = toml.load(file)
 
 # Constants
-ORDER_TYPE_MARKET = st.secrets["trading_configuration"]["ORDER_TYPE_MARKET"]
-SIDE_BUY = st.secrets["trading_configuration"]["SIDE_BUY"]
-SIDE_SELL = st.secrets["trading_configuration"]["SIDE_SELL"]
-INTERVAL = st.secrets["trading_configuration"]["INTERVAL"]
-LIMIT = st.secrets["trading_configuration"]["LIMIT"]
-RSI_PERIOD = st.secrets["trading_configuration"]["RSI_PERIOD"]
-SMA_FAST = st.secrets["trading_configuration"]["SMA_FAST"]
-SMA_SLOW = st.secrets["trading_configuration"]["SMA_SLOW"]
-RSI_OVERBOUGHT = st.secrets["trading_configuration"]["RSI_OVERBOUGHT"]
-RSI_OVERSOLD = st.secrets["trading_configuration"]["RSI_OVERSOLD"]
-FEE_RATE = st.secrets["trading_configuration"]["FEE_RATE"]
-CHECK_INTERVAL = st.secrets["trading_configuration"]["CHECK_INTERVAL"]
-STOP_LOSS = st.secrets["trading_configuration"]["STOP_LOSS"]
-TAKE_PROFIT = st.secrets["trading_configuration"]["TAKE_PROFIT"]
-MONTHLY_TARGET = st.secrets["trading_configuration"]["MONTHLY_TARGET"]
+ORDER_TYPE_MARKET = secrets["trading_configuration"]["ORDER_TYPE_MARKET"]
+SIDE_BUY = secrets["trading_configuration"]["SIDE_BUY"]
+SIDE_SELL = secrets["trading_configuration"]["SIDE_SELL"]
+INTERVAL = secrets["trading_configuration"]["INTERVAL"]
+LIMIT = secrets["trading_configuration"]["LIMIT"]
+RSI_PERIOD = secrets["trading_configuration"]["RSI_PERIOD"]
+SMA_FAST = secrets["trading_configuration"]["SMA_FAST"]
+SMA_SLOW = secrets["trading_configuration"]["SMA_SLOW"]
+RSI_OVERBOUGHT = secrets["trading_configuration"]["RSI_OVERBOUGHT"]
+RSI_OVERSOLD = secrets["trading_configuration"]["RSI_OVERSOLD"]
+FEE_RATE = secrets["trading_configuration"]["FEE_RATE"]
+CHECK_INTERVAL = secrets["trading_configuration"]["CHECK_INTERVAL"]
+STOP_LOSS = secrets["trading_configuration"]["STOP_LOSS"]
+TAKE_PROFIT = secrets["trading_configuration"]["TAKE_PROFIT"]
+MONTHLY_TARGET = secrets["trading_configuration"]["MONTHLY_TARGET"]
 
 # Exchange Configuration
-EXCHANGE = st.secrets["exchange"]["EXCHANGE"]
-MAX_BUY_USD = st.secrets["max_trade_amounts"]["MAX_BUY_USD"]
-MAX_BUY_MXN = st.secrets["max_trade_amounts"]["MAX_BUY_MXN"]
-MAX_SELL_USD = st.secrets["max_trade_amounts"]["MAX_SELL_USD"]
-MAX_SELL_MXN = st.secrets["max_trade_amounts"]["MAX_SELL_MXN"]
+EXCHANGE = secrets["exchange"]["EXCHANGE"]
+MAX_BUY_USD = secrets["max_trade_amounts"]["MAX_BUY_USD"]
+MAX_BUY_MXN = secrets["max_trade_amounts"]["MAX_BUY_MXN"]
+MAX_SELL_USD = secrets["max_trade_amounts"]["MAX_SELL_USD"]
+MAX_SELL_MXN = secrets["max_trade_amounts"]["MAX_SELL_MXN"]
 
 
 # Validate constants
@@ -138,13 +140,9 @@ if MAX_SELL_MXN < 0:
 
 class State:
     def __init__(self):
-        self.saldo_money: float = float(
-            st.secrets["initial_balance"]["INITIAL_BALANCE"]
-        )
+        self.saldo_money: float = float(secrets["initial_balance"]["INITIAL_BALANCE"])
         self.monedas: float = 0.0
-        self.is_simulation: bool = (
-            st.secrets["simulation_mode"]["IS_SIMULATION"] == "true"
-        )
+        self.is_simulation: bool = bool(secrets["simulation_mode"]["IS_SIMULATION"])
         self.last_price: float = 0.0
         self.trades_history: List[Dict] = []
         self.total_profit: float = 0.0
@@ -161,13 +159,13 @@ class State:
 class TradingBot:
     def __init__(self):
         if EXCHANGE == "BINANCE":
-            self.api_key = os.getenv("BINANCE_API_KEY")
-            self.api_secret = os.getenv("BINANCE_API_SECRET")
+            self.api_key = secrets["binance_api_keys"]["BINANCE_API_KEY"]
+            self.api_secret = secrets["binance_api_keys"]["BINANCE_API_SECRET"]
             self.client = Client(self.api_key, self.api_secret)
             self.symbol = "BTCUSDT"
         else:  # BITSO
-            self.api_key = os.getenv("BITSO_API_KEY", "")
-            self.api_secret = os.getenv("BITSO_API_SECRET", "")
+            self.api_key = secrets["bitso_api_keys"]["BITSO_API_KEY"]
+            self.api_secret = secrets["bitso_api_keys"]["BITSO_API_SECRET"]
             self.client = BitsoClient(self.api_key, self.api_secret)
             self.symbol = "btc_mxn"
 
@@ -450,8 +448,8 @@ class TradingBot:
 
     def _place_order(self, side: str, quantity: float) -> Dict:
         if EXCHANGE == "BINANCE":
-            return self.client.create_order(
-                symbol=self.symbol, side=side, type=ORDER_TYPE_MARKET, quantity=quantity
+            return self.client.order_market(
+                symbol=self.symbol, side=side, quantity=quantity
             )
         else:  # BITSO
             return self.client.place_order(
@@ -519,4 +517,6 @@ if __name__ == "__main__":
     startup_msg = "\n" + "=" * 50 + "\nTrading bot starting...\n" + "=" * 50
     print(f"{Fore.CYAN}{startup_msg}{Style.RESET_ALL}")
     logger.info(startup_msg)
-    bot.run_bot()
+    # bot.run_bot()
+    bot.execute_trade("BUY")
+    bot.execute_trade("SELL")
