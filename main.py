@@ -4,15 +4,15 @@ import math
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from binance.spot import Spot as Client
-from bitso import Api as BitsoClient
+import yfinance as yf
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 from colorama import init, Fore, Style
 from dotenv import load_dotenv
-import toml
-
+from telethon import TelegramClient, events, sync
+import streamlit as st
+import requests
 
 # Load environment variables from .env file
 load_dotenv()
@@ -32,117 +32,34 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-with open("secrets.toml", "r") as file:
-    secrets = toml.load(file)
-
 # Constants
-ORDER_TYPE_MARKET = secrets["trading_configuration"]["ORDER_TYPE_MARKET"]
-SIDE_BUY = secrets["trading_configuration"]["SIDE_BUY"]
-SIDE_SELL = secrets["trading_configuration"]["SIDE_SELL"]
-INTERVAL = secrets["trading_configuration"]["INTERVAL"]
-LIMIT = secrets["trading_configuration"]["LIMIT"]
-RSI_PERIOD = secrets["trading_configuration"]["RSI_PERIOD"]
-SMA_FAST = secrets["trading_configuration"]["SMA_FAST"]
-SMA_SLOW = secrets["trading_configuration"]["SMA_SLOW"]
-RSI_OVERBOUGHT = secrets["trading_configuration"]["RSI_OVERBOUGHT"]
-RSI_OVERSOLD = secrets["trading_configuration"]["RSI_OVERSOLD"]
-FEE_RATE = secrets["trading_configuration"]["FEE_RATE"]
-CHECK_INTERVAL = secrets["trading_configuration"]["CHECK_INTERVAL"]
-STOP_LOSS = secrets["trading_configuration"]["STOP_LOSS"]
-TAKE_PROFIT = secrets["trading_configuration"]["TAKE_PROFIT"]
-MONTHLY_TARGET = secrets["trading_configuration"]["MONTHLY_TARGET"]
-
-# Exchange Configuration
-EXCHANGE = secrets["exchange"]["EXCHANGE"]
-MAX_BUY_USD = secrets["max_trade_amounts"]["MAX_BUY_USD"]
-MAX_BUY_MXN = secrets["max_trade_amounts"]["MAX_BUY_MXN"]
-MAX_SELL_USD = secrets["max_trade_amounts"]["MAX_SELL_USD"]
-MAX_SELL_MXN = secrets["max_trade_amounts"]["MAX_SELL_MXN"]
-
-
-# Validate constants
-if ORDER_TYPE_MARKET not in ["MARKET", "LIMIT"]:
-    raise ValueError("ORDER_TYPE_MARKET must be 'MARKET' or 'LIMIT'")
-
-if SIDE_BUY not in ["BUY", "SELL"]:
-    raise ValueError("SIDE_BUY must be 'BUY' or 'SELL'")
-
-if SIDE_SELL not in ["BUY", "SELL"]:
-    raise ValueError("SIDE_SELL must be 'BUY' or 'SELL'")
-
-if INTERVAL not in [
-    "1m",
-    "5m",
-    "15m",
-    "30m",
-    "1h",
-    "2h",
-    "4h",
-    "6h",
-    "8h",
-    "12h",
-    "1d",
-    "3d",
-    "1w",
-    "1M",
-]:
-    raise ValueError("INTERVAL must be a valid time frame")
-
-if LIMIT < 1:
-    raise ValueError("LIMIT must be a positive integer")
-
-if RSI_PERIOD < 1:
-    raise ValueError("RSI_PERIOD must be a positive integer")
-
-if SMA_FAST < 1:
-    raise ValueError("SMA_FAST must be a positive integer")
-
-if SMA_SLOW < 1:
-    raise ValueError("SMA_SLOW must be a positive integer")
-
-if RSI_OVERBOUGHT < 0 or RSI_OVERBOUGHT > 100:
-    raise ValueError("RSI_OVERBOUGHT must be between 0 and 100")
-
-if RSI_OVERSOLD < 0 or RSI_OVERSOLD > 100:
-    raise ValueError("RSI_OVERSOLD must be between 0 and 100")
-
-if FEE_RATE < 0 or FEE_RATE > 1:
-    raise ValueError("FEE_RATE must be between 0 and 1")
-
-if CHECK_INTERVAL < 1:
-    raise ValueError("CHECK_INTERVAL must be a positive integer")
-
-if STOP_LOSS > 0 or STOP_LOSS < -1:
-    raise ValueError("STOP_LOSS must be between -1 and 0")
-
-if TAKE_PROFIT < 0 or TAKE_PROFIT > 1:
-    raise ValueError("TAKE_PROFIT must be between 0 and 1")
-
-if MONTHLY_TARGET < 0 or MONTHLY_TARGET > 1:
-    raise ValueError("MONTHLY_TARGET must be between 0 and 1")
-
-# Validate exchange configuration
-if EXCHANGE not in ["BINANCE", "BITSO"]:
-    raise ValueError("EXCHANGE must be 'BINANCE' or 'BITSO'")
-
-if MAX_BUY_USD < 0:
-    raise ValueError("MAX_BUY_USD must be a non-negative number")
-
-if MAX_BUY_MXN < 0:
-    raise ValueError("MAX_BUY_MXN must be a non-negative number")
-
-if MAX_SELL_USD < 0:
-    raise ValueError("MAX_SELL_USD must be a non-negative number")
-
-if MAX_SELL_MXN < 0:
-    raise ValueError("MAX_SELL_MXN must be a non-negative number")
+ORDER_TYPE_MARKET = st.secrets["trading_configuration"]["ORDER_TYPE_MARKET"]
+SIDE_BUY = st.secrets["trading_configuration"]["SIDE_BUY"]
+SIDE_SELL = st.secrets["trading_configuration"]["SIDE_SELL"]
+INTERVAL = st.secrets["trading_configuration"]["INTERVAL"]
+LIMIT = st.secrets["trading_configuration"]["LIMIT"]
+RSI_PERIOD = st.secrets["trading_configuration"]["RSI_PERIOD"]
+SMA_FAST = st.secrets["trading_configuration"]["SMA_FAST"]
+SMA_SLOW = st.secrets["trading_configuration"]["SMA_SLOW"]
+RSI_OVERBOUGHT = st.secrets["trading_configuration"]["RSI_OVERBOUGHT"]
+RSI_OVERSOLD = st.secrets["trading_configuration"]["RSI_OVERSOLD"]
+FEE_RATE = st.secrets["trading_configuration"]["FEE_RATE"]
+CHECK_INTERVAL = st.secrets["trading_configuration"]["CHECK_INTERVAL"]
+STOP_LOSS = st.secrets["trading_configuration"]["STOP_LOSS"]
+TAKE_PROFIT = st.secrets["trading_configuration"]["TAKE_PROFIT"]
+MONTHLY_TARGET = st.secrets["trading_configuration"]["MONTHLY_TARGET"]
+# Additional configuration for Telegram notifications
+TELEGRAM_TOKEN = st.secrets["telegram_keys"]["TOKEN"]
+TELEGRAM_CHAT_ID = st.secrets["telegram_keys"]["CHAT_ID"]
 
 
 class State:
     def __init__(self):
-        self.saldo_money: float = float(secrets["initial_balance"]["INITIAL_BALANCE"])
+        self.saldo_money: float = float(
+            st.secrets["initial_balance"]["INITIAL_BALANCE"]
+        )
         self.monedas: float = 0.0
-        self.is_simulation: bool = bool(secrets["simulation_mode"]["IS_SIMULATION"])
+        self.is_simulation: bool = bool(st.secrets["simulation_mode"]["IS_SIMULATION"])
         self.last_price: float = 0.0
         self.trades_history: List[Dict] = []
         self.total_profit: float = 0.0
@@ -153,70 +70,30 @@ class State:
         self.monthly_profit: float = 0.0
         self.month_start_balance: float = self.saldo_money
         self.last_month: int = datetime.now().month
-        self.currency = "USD" if EXCHANGE == "BINANCE" else "MXN"
+        self.currency = "USD"
 
 
 class TradingBot:
     def __init__(self):
-        if EXCHANGE == "BINANCE":
-            self.api_key = secrets["binance_api_keys"]["BINANCE_API_KEY"]
-            self.api_secret = secrets["binance_api_keys"]["BINANCE_API_SECRET"]
-            self.client = Client(self.api_key, self.api_secret)
-            self.symbol = "BTCUSDT"
-        else:  # BITSO
-            self.api_key = secrets["bitso_api_keys"]["BITSO_API_KEY"]
-            self.api_secret = secrets["bitso_api_keys"]["BITSO_API_SECRET"]
-            self.client = BitsoClient(self.api_key, self.api_secret)
-            self.symbol = "btc_mxn"
-
         self.state = State()
         self.executor = ThreadPoolExecutor(max_workers=4)
-        self.max_buy = MAX_BUY_USD if EXCHANGE == "BINANCE" else MAX_BUY_MXN
-        self.max_sell = MAX_SELL_USD if EXCHANGE == "BINANCE" else MAX_SELL_MXN
+        self.symbol = "BTC-USD"
 
-        init_msg = (
-            "\n"
-            + "=" * 50
-            + "\n"
-            + f"Bot initialized - Trading {self.symbol} on {EXCHANGE} in {'simulation' if self.state.is_simulation else 'live'} mode\n"
-            + f"Max buy per trade: {self.max_buy} {self.state.currency}\n"
-            + f"Max sell per trade: {self.max_sell} {self.state.currency}\n"
-            + "=" * 50
-        )
-        print(f"{Fore.CYAN}{init_msg}{Style.RESET_ALL}")
-        logger.info(init_msg)
+    def send_message(self, message: str) -> None:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+        try:
+            response = requests.post(url, data=data)
+            if response.status_code == 200:
+                logger.info(f"Message sent successfully: {message}")
+            else:
+                logger.error(f"Failed to send message: {response.text}")
+        except Exception as e:
+            logger.error(f"Error sending message: {str(e)}")
 
     def get_historical_data(self) -> pd.DataFrame:
         try:
-            if EXCHANGE == "BINANCE":
-                klines = self.client.klines(
-                    symbol=self.symbol, interval=INTERVAL, limit=LIMIT
-                )
-
-                columns = [
-                    "timestamp",
-                    "open",
-                    "high",
-                    "low",
-                    "close",
-                    "volume",
-                    "close_time",
-                    "quote_asset_volume",
-                    "number_of_trades",
-                    "taker_buy_base_asset_volume",
-                    "taker_buy_quote_asset_volume",
-                    "ignore",
-                ]
-
-                df = pd.DataFrame(klines, columns=columns)
-                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-            else:  # BITSO
-                trades = self.client.get_ohlcv(self.symbol, INTERVAL, LIMIT)
-                df = pd.DataFrame(trades)
-                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-
-            df.set_index("timestamp", inplace=True)
-            df = df.astype(float)
+            df = yf.download(tickers=self.symbol, period="7d", interval=INTERVAL)
             return df
 
         except Exception as e:
@@ -240,12 +117,12 @@ class TradingBot:
             futures = []
             with ThreadPoolExecutor(max_workers=3) as executor:
                 futures.append(
-                    executor.submit(lambda: df["close"].rolling(window=SMA_FAST).mean())
+                    executor.submit(lambda: df["Close"].rolling(window=SMA_FAST).mean())
                 )
                 futures.append(
-                    executor.submit(lambda: df["close"].rolling(window=SMA_SLOW).mean())
+                    executor.submit(lambda: df["Close"].rolling(window=SMA_SLOW).mean())
                 )
-                futures.append(executor.submit(lambda: self.calculate_rsi(df["close"])))
+                futures.append(executor.submit(lambda: self.calculate_rsi(df["Close"])))
 
             df["SMA20"], df["SMA50"], df["RSI"] = [f.result() for f in futures]
 
@@ -264,30 +141,41 @@ class TradingBot:
                 & (df["RSI"] > RSI_OVERSOLD)
             )
 
-            df.loc[buy_conditions, "Buy_Signal"] = df["close"]
-            df.loc[sell_conditions, "Sell_Signal"] = df["close"]
+            df.loc[buy_conditions, "Buy_Signal"] = df["Close"]
+            df.loc[sell_conditions, "Sell_Signal"] = df["Close"]
 
-            # Log signal analysis
+            # Log signal analysis with quantity recommendation
             if buy_conditions.iloc[-1]:
                 signal_msg = (
                     "\n" + "-" * 50 + "\n"
                     "SIGNAL ANALYSIS:\n"
                     "SMA20 crossed above SMA50 (Bullish)\n"
                     f"RSI: {df['RSI'].iloc[-1]:.2f} (Not overbought)\n"
-                    "Potential BUY signal detected\n" + "-" * 50
+                    "Potential BUY signal detected\n"
+                    f"Recommended quantity: {self.calculate_buy_quantity(df['Close'].iloc[-1]):.2f}\n"
+                    + "-" * 50
                 )
                 print(f"{Fore.CYAN}{signal_msg}{Style.RESET_ALL}")
                 logger.info(signal_msg)
+                self.send_message(
+                    f"Good time to buy Bitcoin. Recommended quantity: {self.calculate_buy_quantity(df['Close'].iloc[-1]):.2f}"
+                )
+
             elif sell_conditions.iloc[-1]:
                 signal_msg = (
                     "\n" + "-" * 50 + "\n"
                     "SIGNAL ANALYSIS:\n"
                     "SMA20 crossed below SMA50 (Bearish)\n"
                     f"RSI: {df['RSI'].iloc[-1]:.2f} (Not oversold)\n"
-                    "Potential SELL signal detected\n" + "-" * 50
+                    "Potential SELL signal detected\n"
+                    f"Recommended quantity: {self.calculate_sell_quantity(df['Close'].iloc[-1]):.2f}\n"
+                    + "-" * 50
                 )
                 print(f"{Fore.CYAN}{signal_msg}{Style.RESET_ALL}")
                 logger.info(signal_msg)
+                self.send_message(
+                    f"Good time to sell Bitcoin. Recommended quantity: {self.calculate_sell_quantity(df['Close'].iloc[-1]):.2f}"
+                )
 
             return df
 
@@ -298,172 +186,6 @@ class TradingBot:
             print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
             logger.error(error_msg)
             return df
-
-    def execute_trade(self, signal: str) -> None:
-        try:
-            if EXCHANGE == "BINANCE":
-                current_price = float(
-                    self.client.ticker_price(symbol=self.symbol)["price"]
-                )
-            else:  # BITSO
-                current_price = float(self.client.ticker(self.symbol)["last"])
-
-            trade_msg = (
-                "\n"
-                + "-" * 50
-                + f"\nExecuting {signal} at {current_price} {self.state.currency}\n"
-                + "-" * 50
-            )
-            print(f"{Fore.CYAN}{trade_msg}{Style.RESET_ALL}")
-            logger.info(trade_msg)
-
-            if self.state.is_simulation:
-                self._execute_simulation_trade(signal, current_price)
-            else:
-                self._execute_real_trade(signal, current_price)
-
-        except Exception as e:
-            error_msg = (
-                "\n" + "!" * 50 + f"\nTrade execution error: {str(e)}\n" + "!" * 50
-            )
-            print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
-            logger.error(error_msg)
-
-    def _execute_simulation_trade(self, signal: str, current_price: float) -> None:
-        # Check if we need to reset monthly tracking
-        current_month = datetime.now().month
-        if current_month != self.state.last_month:
-            self.state.month_start_balance = self.state.saldo_money + (
-                self.state.monedas * current_price
-            )
-            self.state.monthly_profit = 0
-            self.state.last_month = current_month
-
-        if signal == "BUY" and self.state.saldo_money > 0:
-            # Only invest if monthly target not yet reached and respect max buy limit
-            if (
-                self.state.monthly_profit
-                < MONTHLY_TARGET * self.state.month_start_balance
-            ):
-                invest_amount = min(self.state.saldo_money, self.max_buy)
-                amount = invest_amount / current_price
-                self.state.monedas = amount
-                self.state.saldo_money -= invest_amount
-                self._record_trade("BUY", current_price, amount)
-            else:
-                skip_msg = (
-                    "\n"
-                    + "-" * 50
-                    + "\nMonthly target reached - skipping buy\n"
-                    + "-" * 50
-                )
-                print(f"{Fore.YELLOW}{skip_msg}{Style.RESET_ALL}")
-                logger.info(skip_msg)
-
-        elif signal == "SELL" and self.state.monedas > 0:
-            amount = min(self.state.monedas, self.max_sell / current_price)
-            sale_value = amount * current_price
-            profit_percentage = (sale_value - (amount * self.state.last_price)) / (
-                amount * self.state.last_price
-            )
-
-            # Sell if we hit take profit or stop loss
-            should_sell = (profit_percentage >= TAKE_PROFIT) or (
-                profit_percentage <= STOP_LOSS
-            )
-
-            if should_sell:
-                profit = sale_value - (amount * self.state.last_price)
-                self.state.saldo_money = sale_value
-                self.state.monedas = 0
-                self.state.total_trades += 1
-                self.state.monthly_profit += profit
-
-                if profit > 0:
-                    self.state.total_profit += profit
-                    self.state.winning_trades += 1
-                else:
-                    self.state.total_losses += abs(profit)
-                    self.state.losing_trades += 1
-
-                self._record_trade("SELL", current_price, amount, profit)
-            else:
-                hold_msg = (
-                    "\n"
-                    + "-" * 50
-                    + f"\nHold position - Current P/L: {profit_percentage:.2%}\n"
-                    + "-" * 50
-                )
-                print(f"{Fore.YELLOW}{hold_msg}{Style.RESET_ALL}")
-                logger.info(hold_msg)
-
-    def _execute_real_trade(self, signal: str, current_price: float) -> None:
-        if signal == "BUY":
-            quantity = self.calculate_quantity(current_price)
-            order = self._place_order(SIDE_BUY, quantity)
-            order_msg = "\n" + "-" * 50 + f"\nOrder placed: {order}\n" + "-" * 50
-            print(f"{Fore.GREEN}{order_msg}{Style.RESET_ALL}")
-            logger.info(order_msg)
-
-        elif signal == "SELL":
-            order = self._place_order(SIDE_SELL, self.state.monedas)
-            order_msg = "\n" + "-" * 50 + f"\nOrder placed: {order}\n" + "-" * 50
-            print(f"{Fore.GREEN}{order_msg}{Style.RESET_ALL}")
-            logger.info(order_msg)
-
-    def _record_trade(
-        self, trade_type: str, price: float, amount: float, profit: float = 0
-    ) -> None:
-        if trade_type == "BUY":
-            self.state.last_price = price
-            trade_msg = (
-                "\n" + "=" * 50 + "\n"
-                "BUY EXECUTION:\n"
-                f"Amount: {amount:.8f} BTC\n"
-                f"Price: {price:.2f} {self.state.currency}\n"
-                f"Total Cost: {(amount * price):.2f} {self.state.currency}\n" + "=" * 50
-            )
-            print(f"{Fore.YELLOW}{trade_msg}{Style.RESET_ALL}")
-            logger.info(trade_msg)
-        else:
-            win_rate = (
-                (self.state.winning_trades / self.state.total_trades * 100)
-                if self.state.total_trades > 0
-                else 0
-            )
-            color = Fore.GREEN if profit > 0 else Fore.RED
-            trade_msg = (
-                "\n" + "=" * 50 + "\n"
-                "SELL EXECUTION:\n"
-                f"Amount: {amount:.8f} BTC\n"
-                f"Price: {price:.2f} {self.state.currency}\n"
-                f"Profit/Loss: {profit:.2f} {self.state.currency}\n"
-                f"Monthly Profit: {(self.state.monthly_profit / self.state.month_start_balance):.2%}\n"
-                f"Win Rate: {win_rate:.1f}%\n"
-                f"Total P/L: {(self.state.total_profit - self.state.total_losses):.2f} {self.state.currency}\n"
-                + "=" * 50
-            )
-            print(f"{color}{trade_msg}{Style.RESET_ALL}")
-            logger.info(trade_msg)
-
-    def _place_order(self, side: str, quantity: float) -> Dict:
-        if EXCHANGE == "BINANCE":
-            return self.client.order_market(
-                symbol=self.symbol, side=side, quantity=quantity
-            )
-        else:  # BITSO
-            return self.client.place_order(
-                book=self.symbol, side=side.lower(), order_type="market", major=quantity
-            )
-
-    def calculate_quantity(self, price: float) -> float:
-        if EXCHANGE == "BINANCE":
-            balance = float(self.client.get_asset_balance(asset="USDT")["free"])
-            quantity = min(balance, MAX_BUY_USD) * FEE_RATE / price
-        else:  # BITSO
-            balance = float(self.client.balance()["mxn"]["available"])
-            quantity = min(balance, MAX_BUY_MXN) * FEE_RATE / price
-        return round(quantity, 5)
 
     def run_bot(self) -> None:
         while True:
@@ -494,22 +216,26 @@ class TradingBot:
         summary = (
             "\n" + "*" * 50 + "\n"
             "PORTFOLIO SUMMARY:\n"
-            f"{self.state.currency} Balance: {self.state.saldo_money:.2f}\n"
-            f"BTC Balance: {self.state.monedas:.8f}\n"
-            f"Current Price: {df['close'].iloc[-1]:.2f} {self.state.currency}\n"
+            f"Current Price: {df['Close'].iloc[-1]:.2f} {self.state.currency}\n"
             f"RSI: {df['RSI'].iloc[-1]:.2f}\n"
-            f"SMA20: {df['SMA20'].iloc[-1]:.2f} {self.state.currency}\n"
-            f"SMA50: {df['SMA50'].iloc[-1]:.2f} {self.state.currency}\n"
-            f"Total Profit: {self.state.total_profit:.2f} {self.state.currency}\n"
-            f"Total Losses: {self.state.total_losses:.2f} {self.state.currency}\n"
             f"Net P/L: {net_pl:.2f} {self.state.currency}\n"
-            f"Monthly P/L: {(self.state.monthly_profit / self.state.month_start_balance):.2%}\n"
-            f"Win Rate: {win_rate:.1f}%\n"
             f"Next check in {CHECK_INTERVAL/60} minutes...\n" + "*" * 50
         )
 
         print(f"{color}{summary}{Style.RESET_ALL}")
         logger.info(summary)
+
+    def calculate_buy_quantity(self, price: float) -> float:
+        # Assuming a fixed percentage of the available balance for each trade
+        trade_percentage = 0.05  # 5% of the balance for each trade
+        quantity = self.state.saldo_money * trade_percentage / price
+        return quantity
+
+    def calculate_sell_quantity(self, price: float) -> float:
+        # Assuming a fixed percentage of the available balance for each trade
+        trade_percentage = 0.05  # 5% of the balance for each trade
+        quantity = self.state.monedas * trade_percentage
+        return quantity
 
 
 if __name__ == "__main__":
@@ -517,6 +243,4 @@ if __name__ == "__main__":
     startup_msg = "\n" + "=" * 50 + "\nTrading bot starting...\n" + "=" * 50
     print(f"{Fore.CYAN}{startup_msg}{Style.RESET_ALL}")
     logger.info(startup_msg)
-    # bot.run_bot()
-    bot.execute_trade("BUY")
-    bot.execute_trade("SELL")
+    bot.run_bot()
