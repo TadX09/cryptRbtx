@@ -4,6 +4,7 @@ import math
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import pytz
 import yfinance as yf
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
@@ -22,7 +23,7 @@ load_dotenv()
 init()
 
 # Constants
-
+PERIOD = st.secrets["trading_configuration"]["PERIOD"]
 INTERVAL = st.secrets["trading_configuration"]["INTERVAL"]
 INVERVAL_JOB = st.secrets["trading_configuration"]["INVERVAL_JOB"]
 RSI_PERIOD = st.secrets["trading_configuration"]["RSI_PERIOD"]
@@ -60,7 +61,7 @@ class TradingBot:
 
     def get_historical_data(self) -> pd.DataFrame:
         try:
-            df = yf.download(tickers=self.symbol, period="7d", interval=INTERVAL)
+            df = yf.download(tickers=self.symbol, period=PERIOD, interval=INTERVAL)
             return df
 
         except Exception as e:
@@ -110,16 +111,14 @@ class TradingBot:
             df.loc[buy_conditions, "Buy_Signal"] = df["Close"]
             df.loc[sell_conditions, "Sell_Signal"] = df["Close"]
 
-            # Log signal analysis with quantity recommendation
+            # Log signal analysis
             if buy_conditions.iloc[-1]:
                 signal_msg = (
                     "\n" + "-" * 50 + "\n"
                     "SIGNAL ANALYSIS:\n"
                     "SMA20 crossed above SMA50 (Bullish)\n"
                     f"RSI: {df['RSI'].iloc[-1]:.2f} (Not overbought)\n"
-                    "Potential BUY signal detected\n"
-                    f"Recommended quantity: {self.calculate_buy_quantity(df['Close'].iloc[-1]):.2f}\n"
-                    + "-" * 50
+                    "Potential BUY signal detected\n" + "-" * 50
                 )
                 print(f"{Fore.CYAN}{signal_msg}{Style.RESET_ALL}")
                 self.send_message(
@@ -132,9 +131,7 @@ class TradingBot:
                     "SIGNAL ANALYSIS:\n"
                     "SMA20 crossed below SMA50 (Bearish)\n"
                     f"RSI: {df['RSI'].iloc[-1]:.2f} (Not oversold)\n"
-                    "Potential SELL signal detected\n"
-                    f"Recommended quantity: {self.calculate_sell_quantity(df['Close'].iloc[-1]):.2f}\n"
-                    + "-" * 50
+                    "Potential SELL signal detected\n" + "-" * 50
                 )
                 print(f"{Fore.CYAN}{signal_msg}{Style.RESET_ALL}")
                 self.send_message(
@@ -168,9 +165,9 @@ class TradingBot:
 
     def _check_signals(self, df: pd.DataFrame) -> None:
         if pd.notna(df["Buy_Signal"].iloc[-1]):
-            self.execute_trade("BUY")
+            print("BUY signal detected")
         elif pd.notna(df["Sell_Signal"].iloc[-1]):
-            self.execute_trade("SELL")
+            print("SELL signal detected")
 
     def _print_portfolio_summary(self, df: pd.DataFrame) -> None:
 
@@ -179,7 +176,9 @@ class TradingBot:
         summary = (
             "\n" + "*" * 50 + "\n"
             "PORTFOLIO SUMMARY:\n"
+            f"Date: {datetime.now(pytz.timezone('America/Mexico_City')).strftime('%Y-%m-%d %H:%M:%S')}\n"
             f"Current Price: {df['Close'].iloc[-1]:.2f} {self.state.currency}\n"
+            f"Price in MXN: ${df['Close'].iloc[-1] * 20:.2f} MXN\n"
             f"RSI: {df['RSI'].iloc[-1]:.2f}\n"
             f"Next check in {INVERVAL_JOB} minutes...\n" + "*" * 50
         )
